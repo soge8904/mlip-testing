@@ -5,6 +5,7 @@ from ase.md.npt import NPT
 import ase.units as units
 import numpy as np
 import json
+from functools import partial
 
 class MDRunner:
     """class to run MD simulations. """
@@ -20,25 +21,28 @@ class MDRunner:
         print(f"Running NVT: {duration_ps} ps at {temperature} K")
 
         dyn = NVTBerendsen(self.atoms,
-                       timstep=timestep*units.fs,
+                       timestep=timestep*units.fs,
                        temperature_K=temperature,
                        taut=100*units.fs)
         
         if self.monitor is not None:
-            dyn.attach(self.monitor, interval=1)
+            dyn.attach(partial(self.monitor, self.atoms), interval=1)
 
         if trajectory_file:
             from ase.io import Trajectory
-            traj = Trajectory(trajectory_file, 'w')
+            traj = Trajectory(trajectory_file, 'w', self.atoms)
             dyn.attach(traj.write, interval=loginterval)
 
-        dyn.attach(self._log_progress, interval=loginterval, phase='NVT', total_steps=int(duration_ps*1000/timestep))
+#        dyn.attach(self._log_progress, interval=loginterval, phase='NVT', total_steps=int(duration_ps*1000/timestep))
+        dyn.attach(partial(self._log_progress, phase='NVT', total_steps=int(duration_ps * 1000 / timestep)), interval=loginterval)
         steps = int(duration_ps*1000/timestep) #ps to fs
         try:
             dyn.run(steps)
             print("NVT completed successfully")
         except Exception as e:
+            import traceback
             print(f"NVT simulation failed: {e}")
+            traceback.print_exc()
             if self.monitor:
                 print("Monitor summary:")
                 print(self.monitor.get_summary())
@@ -58,15 +62,16 @@ class MDRunner:
                 pfactor=75*units.fs**2)
         
         if self.monitor is not None:
-            dyn.attach(self.monitor, interval=1)
+            from functools import partial
+            dyn.attach(partial(self.monitor, self.atoms), interval=1)
 
         if trajectory_file:
             from ase.io import Trajectory
-            traj = Trajectory(trajectory_file, 'w')
+            traj = Trajectory(trajectory_file, 'w', self.atoms)
             dyn.attach(traj.write, interval=loginterval)
             
-        dyn.attach(self._log_progress, interval=loginterval,
-                  phase='NPT', total_steps=int(duration_ps*1000/timestep))
+        dyn.attach(partial(self._log_progress,
+                  phase='NPT', total_steps=int(duration_ps*1000/timestep)), interval=loginterval)
         
         steps = int(duration_ps * 1000 / timestep)
         
@@ -90,15 +95,16 @@ class MDRunner:
         dyn = VelocityVerlet(self.atoms,
                              timestep=timestep*units.fs)
         if self.monitor is not None:
-            dyn.attach(self.monitor, interval=1)
+            from functools import partial
+            dyn.attach(partial(self.monitor, self.atoms), interval=1)
             
         if trajectory_file:
             from ase.io import Trajectory
-            traj = Trajectory(trajectory_file, 'w')
+            traj = Trajectory(trajectory_file, 'w', self.atoms)
             dyn.attach(traj.write, interval=loginterval)
             
-        dyn.attach(self._log_progress, interval=loginterval,
-                  phase='NVE', total_steps=int(duration_ps*1000/timestep))
+        dyn.attach(partial(self._log_progress,
+                  phase='NVE', total_steps=int(duration_ps*1000/timestep)), interval=loginterval)
         
         steps = int(duration_ps * 1000 / timestep)
         
