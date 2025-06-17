@@ -216,7 +216,7 @@ class MACETrajectoryAnalyzer:
         
         analysis = {}
         analysis['energy'] = self._analyze_energies()
-        analysis['overall_score'] = self._calculate_overall_score(analysis)
+        analysis['forces'] = self._analyze_forces()
         self.analysis_results = analysis
 
         return analysis
@@ -308,11 +308,14 @@ class MACETrajectoryAnalyzer:
          # Energy parity plot
         dft_e = self.results['dft_energies']
         mace_e = self.results['mace_energies']
+        dft_e_per_atom = self.results['dft_energies']/408
+        mace_e_per_atom = self.results['mace_energies']/408
+
         
-        axes[0,0].scatter(dft_e, mace_e, alpha=0.6, s=20)
-        axes[0,0].plot([dft_e.min(), dft_e.max()], [dft_e.min(), dft_e.max()], 'r--', lw=2)
-        axes[0,0].set_xlabel('DFT Energy (eV)')
-        axes[0,0].set_ylabel('MACE Energy (eV)')
+        axes[0,0].scatter(dft_e_per_atom, mace_e_per_atom, alpha=0.6, s=20)
+        axes[0,0].plot([dft_e_per_atom.min(), dft_e_per_atom.max()], [dft_e_per_atom.min(), dft_e_per_atom.max()], 'r--', lw=2)
+        axes[0,0].set_xlabel('DFT Energy (eV/atom)')
+        axes[0,0].set_ylabel('MACE Energy (eV/atom)')
         axes[0,0].set_title('Energy Parity Plot')
         axes[0,0].grid(True, alpha=0.3)
 
