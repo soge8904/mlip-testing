@@ -33,11 +33,16 @@ class MDRunner:
             traj = Trajectory(trajectory_file, 'w', self.atoms)
             dyn.attach(traj.write, interval=loginterval)
 
-#        dyn.attach(self._log_progress, interval=loginterval, phase='NVT', total_steps=int(duration_ps*1000/timestep))
-        dyn.attach(partial(self._log_progress, phase='NVT', total_steps=int(duration_ps * 1000 / timestep)), interval=loginterval)
-        steps = int(duration_ps*1000/timestep) #ps to fs
+        self._current_step_nvt = 0
+        total_steps = int(duration_ps*1000/timestep)
+        dyn.attach(partial(self._log_progress, 
+                        phase='NVT', 
+                        total_steps=total_steps, 
+                        step_counter_name='_current_step_nvt'), 
+                interval=loginterval)
+
         try:
-            dyn.run(steps)
+            dyn.run(total_steps)
             print("NVT completed successfully")
         except Exception as e:
             import traceback
@@ -70,13 +75,16 @@ class MDRunner:
             traj = Trajectory(trajectory_file, 'w', self.atoms)
             dyn.attach(traj.write, interval=loginterval)
             
+        self._current_step_npt = 0
+        total_steps = int(duration_ps*1000/timestep)
         dyn.attach(partial(self._log_progress,
-                  phase='NPT', total_steps=int(duration_ps*1000/timestep)), interval=loginterval)
-        
-        steps = int(duration_ps * 1000 / timestep)
+                        phase='NPT', 
+                        total_steps=total_steps,
+                        step_counter_name='_current_step_npt'), 
+                interval=loginterval)
         
         try:
-            dyn.run(steps)
+            dyn.run(total_steps)
             print("NPT completed successfully")
         except Exception as e:
             print(f"NPT simulation failed: {e}")
@@ -103,13 +111,16 @@ class MDRunner:
             traj = Trajectory(trajectory_file, 'w', self.atoms)
             dyn.attach(traj.write, interval=loginterval)
             
+        self._current_step_nve = 0
+        total_steps = int(duration_ps*1000/timestep)
         dyn.attach(partial(self._log_progress,
-                  phase='NVE', total_steps=int(duration_ps*1000/timestep)), interval=loginterval)
-        
-        steps = int(duration_ps * 1000 / timestep)
+                        phase='NVE', 
+                        total_steps=total_steps,
+                        step_counter_name='_current_step_nve'), 
+                interval=loginterval)
         
         try:
-            dyn.run(steps)
+            dyn.run(total_steps)
             final_energy = self.atoms.get_total_energy()
             energy_drift = abs(final_energy - initial_energy)
             print(f"NVE completed successfully")
@@ -120,23 +131,42 @@ class MDRunner:
                 print("Monitor summary:")
                 print(self.monitor.get_summary())
             raise
-            final_energy = np.nan
-            energy_drift = np.nan
         
         return self.atoms.copy(), initial_energy, final_energy
     
-    def _log_progress(self, phase, total_steps):
+    def _log_progress(self, phase, total_steps, step_counter_name=None):
         """Internal method to log simulation progress"""
-        current_step = getattr(self, '_current_step', 0)
-        self._current_step = current_step + 1
-        
+        if step_counter_name is None:
+            step_counter_name = f'_current_step_{phase.lower()}'
+
+        current_step = getattr(self, step_counter_name, 0)
+        progress_percent = (current_step / total_steps) * 100 if total_steps > 0 else 0
+
         if hasattr(self.atoms, 'get_total_energy'):
             try:
                 energy = self.atoms.get_total_energy()
-                temp = self.atoms.get_temperature() if hasattr(self.atoms, 'get_temperature') else 'N/A'
-                print(f"{phase} Step {current_step}/{total_steps}: E={energy:.3f} eV, T={temp} K")
-            except:
-                print(f"{phase} Step {current_step}/{total_steps}: Progress update")
+                energy_str = f"E={energy:.3f} eV"
+            except Exception as e:
+                energy_str = f"E=Error({str(e)[:20]})"
+
+            try:
+                velocities = self.atoms.get_velocities()
+                if velocities is not None and not np.any(np.isnan(velocities)):
+                    # Calculate kinetic energy
+                    masses = self.atoms.get_masses()
+                    ke = 0.5 * np.sum(masses[:, np.newaxis] * velocities**2)
+                    # Convert to temperature using equipartition theorem
+                    # 3/2 * N * kB * T = KE, so T = 2*KE / (3*N*kB)
+                    import ase.units as units
+                    temp = 2 * ke / (3 * len(self.atoms) * units.kB)
+                    temp_str = f"T={temp:.1f} K"
+                else:
+                    temp_str = "T=No velocities"
+            except Exception as e:
+                temp_str = f"T=Error({str(e)[:20]})"
+
+            print(f"{phase} Step {current_step:4d}/{total_steps} ({progress_percent:5.1f}%): {energy_str}, {temp_str}")
+            setattr(self, step_counter_name, current_step + 1)
 
     def run_sequential_protocol(self, nvt_params=None, npt_params=None, nve_params=None, base_filename="md_run"):
         """run NVT/NPT/NVE protocol for testing"""
