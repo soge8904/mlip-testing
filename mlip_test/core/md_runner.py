@@ -2,10 +2,12 @@ from ase.md.velocitydistribution import MaxwellBoltzmannDistribution
 from ase.md.verlet import VelocityVerlet
 from ase.md.nvtberendsen import NVTBerendsen
 from ase.md.npt import NPT
+from ase.optimize import BFGS, LBFGS, GPMin, FIRE
 import ase.units as units
 import numpy as np
 import json
 from functools import partial
+from time import time
 
 class MDRunner:
     """class to run MD simulations. """
@@ -207,3 +209,142 @@ class MDRunner:
         print("="*50)
         #save to json?
         return results
+    
+class MinimizationRunner:
+    def __init__(self, atoms, calculator, monitor=None):
+        self.atoms = atoms.copy()
+        self.atoms.calc = calculator
+        self.monitor = monitor
+        self.results = {}
+
+    def minimize(self, optimizer='BFGS', fmax=0.01, steps=500, traj_file=None, logfile=None, constraints=None, **optimizer_kwargs):
+
+        if constraints is not None:
+            self.atoms.set_constraint(constraints)
+
+        initial_energy = self.atoms.get_potential_energy()
+        initial_forces = self.atoms.get_forces()
+        initial_max_force = np.max(np.linalg.norm(initial_forces, axis=1))
+
+        print(f"Initial energy: {initial_energy:.6f} eV")
+        print(f"Initial max force: {initial_max_force:.6f} eV/Å")
+
+        if logfile:
+            optimizer_kwargs['logfile'] = logfile
+
+        opt = BFGS(self.atoms, trajectory=traj_file)
+        if self.monitor is not None:
+            opt.attach(partial(self.monitor, self.atoms))
+        opt.attach(partial(self._log_optimization_progress, initial_energy, fmax))
+
+        start_time = time()
+
+        try:
+            # Run optimization
+            converged = opt.run(fmax=fmax, steps=steps)
+            
+            # Get final state
+            final_energy = self.atoms.get_potential_energy()
+            final_forces = self.atoms.get_forces()
+            final_max_force = np.max(np.linalg.norm(final_forces, axis=1))
+            final_rms_force = np.sqrt(np.mean(np.sum(final_forces**2, axis=1)))
+            
+            optimization_time = time() - start_time
+            actual_steps = opt.get_number_of_steps()
+            
+            # Store results
+            self.results = {
+                'converged': converged,
+                'initial_energy': initial_energy,
+                'final_energy': final_energy,
+                'energy_change': final_energy - initial_energy,
+                'initial_max_force': initial_max_force,
+                'final_max_force': final_max_force,
+                'final_rms_force': final_rms_force,
+                'force_reduction': initial_max_force - final_max_force,
+                'steps_taken': actual_steps,
+                'max_steps': steps,
+                'fmax_criterion': fmax,
+                'optimization_time': optimization_time,
+                'optimizer': optimizer,
+                'success': converged and final_max_force <= fmax
+            }
+            
+            # Print summary
+            print(f"\n{'='*50}")
+            print("OPTIMIZATION SUMMARY")
+            print(f"{'='*50}")
+            print(f"Converged: {'YES' if converged else 'NO'}")
+            print(f"Steps taken: {actual_steps}/{steps}")
+            print(f"Optimization time: {optimization_time:.2f} seconds")
+            print(f"Energy change: {self.results['energy_change']:.6f} eV")
+            print(f"Final energy: {final_energy:.6f} eV")
+            print(f"Final max force: {final_max_force:.6f} eV/Å (criterion: {fmax} eV/Å)")
+            print(f"Final RMS force: {final_rms_force:.6f} eV/Å")
+            print(f"Force reduction: {self.results['force_reduction']:.6f} eV/Å")
+            
+            if converged:
+                print("✓ Optimization completed successfully")
+            else:
+                print("⚠ Optimization did not converge within step limit")
+                
+        except Exception as e:
+            print(f"✗ Optimization failed: {e}")
+            self.results = {
+                'converged': False,
+                'success': False,
+                'error': str(e),
+                'steps_taken': opt.get_number_of_steps() if hasattr(opt, 'get_number_of_steps') else 0,
+                'optimization_time': time.time() - start_time
+            }
+            if self.monitor:
+                print("Monitor summary:")
+                print(self.monitor.get_summary())
+            raise
+        
+        return self.results
+    
+    def _log_optimization_progress(self, initial_energy, fmax):
+        """Log optimization progress"""
+        try:
+            current_energy = self.atoms.get_potential_energy()
+            current_forces = self.atoms.get_forces()
+            max_force = np.max(np.linalg.norm(current_forces, axis=1))
+            
+            energy_change = current_energy - initial_energy
+            converged_str = "✓" if max_force <= fmax else "→"
+            
+            print(f"{converged_str} E={current_energy:.6f} eV (ΔE={energy_change:+.6f}), "
+                  f"Fmax={max_force:.6f} eV/Å")
+                  
+        except Exception as e:
+            print(f"Progress logging failed: {e}")
+            
+
+    def get_results(self):
+        """Return optimization results"""
+        return self.results.copy() if self.results else {}
+    
+    def save_results(self, filename):
+        """Save optimization results to JSON file"""
+        if not self.results:
+            print("No results to save. Run minimize() first.")
+            return
+        
+        # Convert numpy types to Python types for JSON serialization
+        results_serializable = {}
+        for key, value in self.results.items():
+            if isinstance(value, (np.integer, np.floating)):
+                results_serializable[key] = value.item()
+            else:
+                results_serializable[key] = value
+        
+        with open(filename, 'w') as f:
+            json.dump(results_serializable, f, indent=2)
+        
+        print(f"Results saved to: {filename}")
+
+
+
+
+
