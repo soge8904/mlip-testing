@@ -211,16 +211,32 @@ class MDRunner:
         return results
     
 class MinimizationRunner:
-    def __init__(self, atoms, calculator, monitor=None):
+    def __init__(self, atoms, calculator, output_dir="minimization_output", monitor=None):
         self.atoms = atoms.copy()
         self.atoms.calc = calculator
+        self.output_dir = output_dir
         self.monitor = monitor
         self.results = {}
 
-    def minimize(self, optimizer='BFGS', fmax=0.01, steps=500, traj_file=None, logfile=None, constraints=None, **optimizer_kwargs):
+        import os
+        os.makedirs(self.output_dir, exist_ok=True)
+        print(f"Output directory set to: {self.output_dir}")
 
-        if constraints is not None:
-            self.atoms.set_constraint(constraints)
+    def minimize(self, optimizer='BFGS', fmax=0.01, steps=500, traj_file=None, logfile=None, **optimizer_kwargs):
+
+        import os
+        if trajectory_file is None:
+            trajectory_file = f"{optimizer.lower()}_optimization.traj"
+        if logfile is None:
+            logfile = f"{optimizer.lower()}_optimization.log"
+        
+        # Make file paths relative to output_dir
+        trajectory_path = os.path.join(self.output_dir, trajectory_file)
+        logfile_path = os.path.join(self.output_dir, logfile)
+        
+        print(f"Trajectory file: {trajectory_path}")
+        print(f"Log file: {logfile_path}")
+        self.save_initial_structure()
 
         initial_energy = self.atoms.get_potential_energy()
         initial_forces = self.atoms.get_forces()
@@ -269,6 +285,19 @@ class MinimizationRunner:
                 'optimizer': optimizer,
                 'success': converged and final_max_force <= fmax
             }
+            
+            from ase.io import write
+            final_structure_path = os.path.join(self.output_dir, 'final_structure.xyz')
+            
+            # Save final structure
+            final_atoms = self.atoms.copy()
+            final_atoms.calc = None
+            write(final_structure_path, final_atoms)
+            
+            print(f"Final structure saved to: {final_structure_path}")
+            
+            # Auto-save results
+            self.save_results()
             
             # Print summary
             print(f"\n{'='*50}")
@@ -331,6 +360,14 @@ class MinimizationRunner:
             print("No results to save. Run minimize() first.")
             return
         
+        import os
+        
+        if filename is None:
+            filename = "minimization_results.json"
+        
+        filepath = os.path.join(self.output_dir, filename)
+        
+        
         # Convert numpy types to Python types for JSON serialization
         results_serializable = {}
         for key, value in self.results.items():
@@ -339,10 +376,31 @@ class MinimizationRunner:
             else:
                 results_serializable[key] = value
         
-        with open(filename, 'w') as f:
+        with open(filepath, 'w') as f:
             json.dump(results_serializable, f, indent=2)
         
-        print(f"Results saved to: {filename}")
+        print(f"Results saved to: {filepath}")
+
+    def save_initial_structure(self, atoms=None, filename=None):
+        """Save initial structure before optimization starts"""
+        import os
+        from ase.io import write
+        
+        if filename is None:
+            filename = "initial_structure.xyz"
+        
+        filepath = os.path.join(self.output_dir, filename)
+        
+        if atoms is None:
+            atoms = self.atoms.copy()
+        
+        # Remove calculator to avoid issues during writing
+        atoms_to_save = atoms.copy()
+        atoms_to_save.calc = None
+        
+        write(filepath, atoms_to_save)
+        print(f"Initial structure saved to: {filepath}")
+        return filepath
 
 
 
