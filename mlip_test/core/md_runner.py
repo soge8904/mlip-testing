@@ -8,6 +8,7 @@ import numpy as np
 import json
 from functools import partial
 from time import time
+from datetime import datetime
 
 class MDRunner:
     """class to run MD simulations. """
@@ -21,6 +22,8 @@ class MDRunner:
     def run_nvt(self, temperature=300, timestep=1.0, duration_ps=1.0, loginterval=100, trajectory_file=None):
 
         print(f"Running NVT: {duration_ps} ps at {temperature} K")
+        start_time = datetime.now()
+        print(f"Simulation started at: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
 
         dyn = NVTBerendsen(self.atoms,
                        timestep=timestep*units.fs,
@@ -45,7 +48,11 @@ class MDRunner:
 
         try:
             dyn.run(total_steps)
+            end_time = datetime.now()
             print("NVT completed successfully")
+            print(f"Simulation ended at: {end_time.strftime('%Y-%m-%d %H:%M:%S')}")
+            duration = end_time - start_time
+            print(f"Total duration: {duration}")
         except Exception as e:
             import traceback
             print(f"NVT simulation failed: {e}")
