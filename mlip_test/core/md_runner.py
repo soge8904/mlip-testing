@@ -19,7 +19,7 @@ class MDRunner:
         self.atoms.calc = calculator
         self.monitor = monitor
 
-    def run_nvt(self, temperature=300, timestep=1.0, duration_ps=1.0, loginterval=100, trajectory_file=None):
+    def run_nvt(self, temperature=300, timestep=1.0, duration_ps=1.0, loginterval=100, trajectory_file=None, **kwargs):
 
         print(f"Running NVT: {duration_ps} ps at {temperature} K")
         start_time = datetime.now()
@@ -28,7 +28,8 @@ class MDRunner:
         dyn = NVTBerendsen(self.atoms,
                        timestep=timestep*units.fs,
                        temperature_K=temperature,
-                       taut=100*units.fs)
+                       taut=100*units.fs,
+                       **kwargs)
         
         if self.monitor is not None:
             dyn.attach(partial(self.monitor, self.atoms), interval=1)
@@ -64,7 +65,7 @@ class MDRunner:
 
         return self.atoms.copy()
     
-    def run_npt(self, temperature=300, pressure=0.0, timestep=1.0, duration_ps=2.0, loginterval=100, trajectory_file=None):
+    def run_npt(self, temperature=300, pressure=0.0, timestep=1.0, duration_ps=2.0, loginterval=100, trajectory_file=None, **kwargs):
 
         print(f"Running NPT: {duration_ps} ps at {temperature} K")
 
@@ -73,7 +74,8 @@ class MDRunner:
                 temperature_K=temperature,
                 externalstress=pressure, #this is atmospheric pressure
                 ttime=100*units.fs,
-                pfactor=75*units.fs**2)
+                pfactor=75*units.fs**2,
+                **kwargs)
         
         if self.monitor is not None:
             from functools import partial
@@ -104,13 +106,14 @@ class MDRunner:
 
         return self.atoms.copy()
     
-    def run_nve(self, timestep=1.0, duration_ps=2.0, loginterval=100, trajectory_file=None):
+    def run_nve(self, timestep=1.0, duration_ps=2.0, loginterval=100, trajectory_file=None, **kwargs):
 
         print(f"Running NVE: {duration_ps} ps")
 
         initial_energy = self.atoms.get_total_energy()
         dyn = VelocityVerlet(self.atoms,
-                             timestep=timestep*units.fs)
+                             timestep=timestep*units.fs,
+                             **kwargs)
         if self.monitor is not None:
             from functools import partial
             dyn.attach(partial(self.monitor, self.atoms), interval=1)
