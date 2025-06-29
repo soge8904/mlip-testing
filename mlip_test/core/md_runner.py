@@ -78,7 +78,6 @@ class MDRunner:
                 **kwargs)
         
         if self.monitor is not None:
-            from functools import partial
             dyn.attach(partial(self.monitor, self.atoms), interval=1)
 
         if trajectory_file:
